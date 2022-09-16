@@ -43,6 +43,13 @@ import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 /**
  * A skeletal implementation of a buffer.
+ *
+ * <p>
+ *     ByteBuf 与JDK中的 ByteBuffer 的几个大的区别:
+ *         netty的ByteBuf采用了读/写索引分离，一个初始化的ByteBuf的readerIndex和writerIndex都处于0位置,
+ *         当读索引和写索引处于同一位置时，如果我们继续读取，就会抛出异常IndexOutOfBoundsException,
+ *         对于ByteBuf的任何读写操作都会分别单独的维护读索引和写索引。maxCapacity最大容量默认的限制就是Integer.MAX_VALUE
+ * </p>
  */
 public abstract class AbstractByteBuf extends ByteBuf {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractByteBuf.class);
@@ -65,13 +72,22 @@ public abstract class AbstractByteBuf extends ByteBuf {
         }
     }
 
-    static final ResourceLeakDetector<ByteBuf> leakDetector =
-            ResourceLeakDetectorFactory.instance().newResourceLeakDetector(ByteBuf.class);
+    /** 内存泄漏 检测器. **/
+    static final ResourceLeakDetector<ByteBuf> leakDetector = ResourceLeakDetectorFactory.instance().newResourceLeakDetector(ByteBuf.class);
 
+    /** 读索引. **/
     int readerIndex;
+
+    /** 写索引. **/
     int writerIndex;
+    
+    /** 标记读索引. **/
     private int markedReaderIndex;
+    
+    /** 标记写索引. **/
     private int markedWriterIndex;
+    
+    /** 缓冲区的最大容量. **/
     private int maxCapacity;
 
     protected AbstractByteBuf(int maxCapacity) {

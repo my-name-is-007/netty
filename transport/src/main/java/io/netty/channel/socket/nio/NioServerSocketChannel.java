@@ -33,6 +33,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.SocketAddress;
 import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
@@ -42,15 +43,31 @@ import java.util.Map;
 /**
  * A {@link io.netty.channel.socket.ServerSocketChannel} implementation which uses
  * NIO selector based implementation to accept new connections.
+ *
+ * 1. NioServerSocketChannel 对象内部 绑定了 Java NIO 创建的 ServerSocketChannel对象
+ * 2. Netty中，每个channel都有一个unsafe对象，此对象封装了Java NIO底层channel的操作细节
+ * 3. Netty中，每个channel都有一个pipeline对象，此对象就是一个双向链表
+ * 
  */
-public class NioServerSocketChannel extends AbstractNioMessageChannel
-                             implements io.netty.channel.socket.ServerSocketChannel {
+public class NioServerSocketChannel extends AbstractNioMessageChannel implements io.netty.channel.socket.ServerSocketChannel {
 
     private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
+
+    /** 默认的多路复用辅助类: {@link SelectorProvider#provider()}. **/
     private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioServerSocketChannel.class);
 
+    private final ServerSocketChannelConfig config;
+
+    /** 使用默认的多路复用辅助类. **/
+    public NioServerSocketChannel() { this(newSocket(DEFAULT_SELECTOR_PROVIDER)); }
+
+    /**
+     * 返回 NIO 原生的 ServerSocketChannel.
+     * {@link SelectorProvider#openServerSocketChannel()}
+     * @return {@link ServerSocketChannel}
+     */
     private static ServerSocketChannel newSocket(SelectorProvider provider) {
         try {
             /**
@@ -66,29 +83,33 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         }
     }
 
-    private final ServerSocketChannelConfig config;
-
     /**
-     * Create a new instance
-     */
-    public NioServerSocketChannel() {
-        this(newSocket(DEFAULT_SELECTOR_PROVIDER));
-    }
-
-    /**
-     * Create a new instance using the given {@link SelectorProvider}.
-     */
-    public NioServerSocketChannel(SelectorProvider provider) {
-        this(newSocket(provider));
-    }
-
-    /**
-     * Create a new instance using the given {@link ServerSocketChannel}.
+     * 先调用父类构造器:
+     * <ul>
+     *     <li>因为是服务端新生成的channel，第一个参数指定为null，表示没有父channel</li>
+     *     <li>第二个参数指定为ServerSocketChannel</li>
+     *     <li>第三个参数指定ServerSocketChannel关心的事件类型为SelectionKey.OP_ACCEPT</li>
+     * </ul>
+     * 在过程中, 会设置 Unsafe对象(底层真正处理读写的对象)、pipeline(牛逼吧)
+     *
+     * 初始化一下自己的配置对象, config 其实 就是对底层ServerSocket一些配置设置行为的封装
+     * @param channel
      */
     public NioServerSocketChannel(ServerSocketChannel channel) {
         super(null, channel, SelectionKey.OP_ACCEPT);
+        /**
+         * <pre>
+         *     {@code
+         *         javaChannel().socket(), 其实 就是:
+         *         SelectorProvider.provider().openServerSocketChannel().socket();
+         *     }
+         * </pre>
+         *
+         */
         config = new NioServerSocketChannelConfig(this, javaChannel().socket());
     }
+
+    public NioServerSocketChannel(SelectorProvider provider) { this(newSocket(provider)); }
 
     @Override
     public InetSocketAddress localAddress() {
@@ -142,6 +163,9 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel
         javaChannel().close();
     }
 
+    /**
+     * 将 {@link SocketChannel} 和 {@link NioServerSocketChannel} 封装为一个 {@link NioSocketChannel} 对象, 添到 readBuf 中.
+     */
     @Override
     protected int doReadMessages(List<Object> buf) throws Exception {
         SocketChannel ch = SocketUtils.accept(javaChannel());

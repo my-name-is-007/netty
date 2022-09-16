@@ -40,6 +40,7 @@ public class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
         }
     };
 
+
     /**
      * Returns the {@link ChannelOption} of the specified name.
      */
@@ -139,20 +140,14 @@ public class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
     /**
      * Creates a new {@link ChannelOption} with the specified unique {@code name}.
      */
-    private ChannelOption(int id, String name) {
-        super(id, name);
-    }
+    private ChannelOption(int id, String name) { super(id, name); }
 
     @Deprecated
-    protected ChannelOption(String name) {
-        this(pool.nextId(), name);
-    }
+    protected ChannelOption(String name) { this(pool.nextId(), name); }
 
     /**
      * Validate the value which is set for the {@link ChannelOption}. Sub-classes
      * may override this for special checks.
      */
-    public void validate(T value) {
-        ObjectUtil.checkNotNull(value, "value");
-    }
+    public void validate(T value) { ObjectUtil.checkNotNull(value, "value"); }
 }

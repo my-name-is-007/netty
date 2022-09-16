@@ -28,40 +28,50 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class DefaultThreadFactory implements ThreadFactory {
 
+    /** 线程池 编号: 当前类创建的第几个线程池. 注意: 类属性. **/
     private static final AtomicInteger poolId = new AtomicInteger();
 
+    /** 线程 编号: 当前 对象 创建 的 第几个 线程. **/
     private final AtomicInteger nextId = new AtomicInteger();
+
+    /** 创建 的 线程 的 前缀. **/
     private final String prefix;
     private final boolean daemon;
     private final int priority;
     protected final ThreadGroup threadGroup;
 
-    public DefaultThreadFactory(Class<?> poolType) {
-        this(poolType, false, Thread.NORM_PRIORITY);
-    }
+    public DefaultThreadFactory(Class<?> poolType) { this(poolType, false, Thread.NORM_PRIORITY); }
 
-    public DefaultThreadFactory(String poolName) {
-        this(poolName, false, Thread.NORM_PRIORITY);
-    }
+    public DefaultThreadFactory(String poolName) { this(poolName, false, Thread.NORM_PRIORITY); }
 
-    public DefaultThreadFactory(Class<?> poolType, boolean daemon) {
-        this(poolType, daemon, Thread.NORM_PRIORITY);
-    }
+    public DefaultThreadFactory(Class<?> poolType, boolean daemon) { this(poolType, daemon, Thread.NORM_PRIORITY); }
 
-    public DefaultThreadFactory(String poolName, boolean daemon) {
-        this(poolName, daemon, Thread.NORM_PRIORITY);
-    }
+    public DefaultThreadFactory(String poolName, boolean daemon) { this(poolName, daemon, Thread.NORM_PRIORITY); }
 
-    public DefaultThreadFactory(Class<?> poolType, int priority) {
-        this(poolType, false, priority);
-    }
+    public DefaultThreadFactory(Class<?> poolType, int priority) { this(poolType, false, priority); }
 
-    public DefaultThreadFactory(String poolName, int priority) {
-        this(poolName, false, priority);
-    }
+    public DefaultThreadFactory(String poolName, int priority) { this(poolName, false, priority); }
 
     public DefaultThreadFactory(Class<?> poolType, boolean daemon, int priority) {
         this(toPoolName(poolType), daemon, priority);
+    }
+    public DefaultThreadFactory(String poolName, boolean daemon, int priority) {
+        this(poolName, daemon, priority, null);
+    }
+
+
+    public DefaultThreadFactory(String poolName, boolean daemon, int priority, ThreadGroup threadGroup) {
+        ObjectUtil.checkNotNull(poolName, "poolName");
+
+        if (priority < Thread.MIN_PRIORITY || priority > Thread.MAX_PRIORITY) {
+            throw new IllegalArgumentException(
+                    "priority: " + priority + " (expected: Thread.MIN_PRIORITY <= priority <= Thread.MAX_PRIORITY)");
+        }
+        //前缀: 线程池名字-线程池编号-
+        prefix = poolName + '-' + poolId.incrementAndGet() + '-';
+        this.daemon = daemon;
+        this.priority = priority;
+        this.threadGroup = threadGroup;
     }
 
     public static String toPoolName(Class<?> poolType) {
@@ -82,24 +92,7 @@ public class DefaultThreadFactory implements ThreadFactory {
         }
     }
 
-    public DefaultThreadFactory(String poolName, boolean daemon, int priority, ThreadGroup threadGroup) {
-        ObjectUtil.checkNotNull(poolName, "poolName");
-
-        if (priority < Thread.MIN_PRIORITY || priority > Thread.MAX_PRIORITY) {
-            throw new IllegalArgumentException(
-                    "priority: " + priority + " (expected: Thread.MIN_PRIORITY <= priority <= Thread.MAX_PRIORITY)");
-        }
-
-        prefix = poolName + '-' + poolId.incrementAndGet() + '-';
-        this.daemon = daemon;
-        this.priority = priority;
-        this.threadGroup = threadGroup;
-    }
-
-    public DefaultThreadFactory(String poolName, boolean daemon, int priority) {
-        this(poolName, daemon, priority, null);
-    }
-
+    /** 创建 线程, 然后 设置 后台属性、优先级. **/
     @Override
     public Thread newThread(Runnable r) {
         Thread t = newThread(FastThreadLocalRunnable.wrap(r), prefix + nextId.incrementAndGet());
@@ -117,7 +110,10 @@ public class DefaultThreadFactory implements ThreadFactory {
         return t;
     }
 
+    /** 这里先不看, 避免涉及太多类, 后续回来. **/
     protected Thread newThread(Runnable r, String name) {
         return new FastThreadLocalThread(threadGroup, r, name);
     }
+
+    public String getPrefix() { return prefix; }
 }

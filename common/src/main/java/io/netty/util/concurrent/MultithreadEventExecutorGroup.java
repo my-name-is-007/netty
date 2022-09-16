@@ -38,6 +38,9 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
     private final Promise<?> terminationFuture = new DefaultPromise(GlobalEventExecutor.INSTANCE);
     private final EventExecutorChooserFactory.EventExecutorChooser chooser;
 
+
+    //暴露出去, 为了设置线程名.
+    ThreadPerTaskExecutor ex$e = null;
     /**
      * Create a new instance.
      *
@@ -72,15 +75,19 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
                                             EventExecutorChooserFactory chooserFactory, Object... args) {
         checkPositive(nThreads, "nThreads");
 
+        //如果没有指定线程工厂，那么构造一个默认的线程工厂
         if (executor == null) {
             executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
+            this.ex$e = (ThreadPerTaskExecutor) executor;
         }
 
+        //构造一个存放NioEventLoop的数组
         children = new EventExecutor[nThreads];
-
+        //遍历children数组
         for (int i = 0; i < nThreads; i ++) {
             boolean success = false;
             try {
+                //为每个数组位构造一个NioEventLoop
                 children[i] = newChild(executor, args);
                 success = true;
             } catch (Exception e) {
@@ -88,10 +95,11 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
                 throw new IllegalStateException("failed to create a child event loop", e);
             } finally {
                 if (!success) {
+                    //关闭数组中所有已经构造好的NioEventLoop
                     for (int j = 0; j < i; j ++) {
                         children[j].shutdownGracefully();
                     }
-
+                    //同步等待这些NioEventLoop关闭
                     for (int j = 0; j < i; j ++) {
                         EventExecutor e = children[j];
                         try {
@@ -108,8 +116,11 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             }
         }
 
+        //如果指定的线程数量是2的幂次, 那么采用位运算方式进行取模运算;
+        //否则采用传统的取模运算法取下一个NioEventLoop
         chooser = chooserFactory.newChooser(children);
 
+        //构造一个FutureListener
         final FutureListener<Object> terminationListener = new FutureListener<Object>() {
             @Override
             public void operationComplete(Future<Object> future) throws Exception {
@@ -123,6 +134,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             e.terminationFuture().addListener(terminationListener);
         }
 
+        //添加监听器，在NioEventLoop被关闭时触发
         Set<EventExecutor> childrenSet = new LinkedHashSet<EventExecutor>(children.length);
         Collections.addAll(childrenSet, children);
         readonlyChildren = Collections.unmodifiableSet(childrenSet);
@@ -130,6 +142,10 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
 
     protected ThreadFactory newDefaultThreadFactory() {
         return new DefaultThreadFactory(getClass());
+    }
+
+    public ThreadPerTaskExecutor getThreadFactory(){
+        return this.ex$e;
     }
 
     @Override

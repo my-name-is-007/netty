@@ -17,18 +17,27 @@ package io.netty.util.concurrent;
 
 import io.netty.util.internal.ObjectUtil;
 
+import java.lang.reflect.Field;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadFactory;
 
+/**
+ * 任务 的 执行器.
+ */
 public final class ThreadPerTaskExecutor implements Executor {
+    /** 线程工厂, 创建线程. **/
     private final ThreadFactory threadFactory;
 
     public ThreadPerTaskExecutor(ThreadFactory threadFactory) {
         this.threadFactory = ObjectUtil.checkNotNull(threadFactory, "threadFactory");
     }
 
+    /** 根据 Runnable 创建 Thread, 然后 {@link Thread#start()}. **/
     @Override
     public void execute(Runnable command) {
         threadFactory.newThread(command).start();
     }
+
+    //方便调试而已.
+    public DefaultThreadFactory getThreadFactory() { return (DefaultThreadFactory) threadFactory; }
 }

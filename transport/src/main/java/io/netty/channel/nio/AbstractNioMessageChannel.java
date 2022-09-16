@@ -15,12 +15,8 @@
  */
 package io.netty.channel.nio;
 
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelConfig;
-import io.netty.channel.ChannelOutboundBuffer;
-import io.netty.channel.ChannelPipeline;
-import io.netty.channel.RecvByteBufAllocator;
-import io.netty.channel.ServerChannel;
+import io.netty.channel.*;
+import io.netty.channel.ChannelInboundHandler;
 
 import java.io.IOException;
 import java.net.PortUnreachableException;
@@ -59,10 +55,19 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
         return allocHandle.continueReading();
     }
 
+    /**
+     * unsafe对象是真正的负责底层channel的连接/读/写等操作的,
+     * unsafe就好比一个底层channel操作的代理对象
+     */
     private final class NioMessageUnsafe extends AbstractNioUnsafe {
 
+        /** 存放 ServerSocketChannel 获取的 SocketChannel, 每个SocketChannel对应一个客户端连接. **/
         private final List<Object> readBuf = new ArrayList<Object>();
 
+        /**
+         * ServerSocketChannel 处理OP_ACCEPT事件,
+         *
+         */
         @Override
         public void read() {
             assert eventLoop().inEventLoop();
@@ -76,6 +81,7 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
             try {
                 try {
                     do {
+                        //将对应的SocketChannel添加到readBuf中，返回1
                         int localRead = doReadMessages(readBuf);
                         if (localRead == 0) {
                             break;
@@ -90,19 +96,25 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
                 } catch (Throwable t) {
                     exception = t;
                 }
-
+                //将 SocketChannel 传递给 ChannelInboundHandler
                 int size = readBuf.size();
                 for (int i = 0; i < size; i ++) {
                     readPending = false;
+                    /**
+                     * 开始调用 入栈方法, msg 为 SocketChannel实例, 对 bossGroup 事件轮训来说, 会经过
+                     *     {@link io.netty.bootstrap.ServerBootstrap.ServerBootstrapAcceptor}
+                     */
                     pipeline.fireChannelRead(readBuf.get(i));
                 }
+                //清除这些读取到的ByteBuf
                 readBuf.clear();
                 allocHandle.readComplete();
+                /** 读完了, 调用 {@link ChannelInboundHandler#channelReadComplete(ChannelHandlerContext)}. **/
                 pipeline.fireChannelReadComplete();
 
+                /** 发生异常, 调用 {@link ChannelInboundHandler#exceptionCaught(ChannelHandlerContext, Throwable)}. **/
                 if (exception != null) {
                     closed = closeOnReadError(exception);
-
                     pipeline.fireExceptionCaught(exception);
                 }
 
@@ -119,6 +131,7 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
                 // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
                 //
                 // See https://github.com/netty/netty/issues/2254
+                //再次检查这个事件有没有从事件集中去除
                 if (!readPending && !config.isAutoRead()) {
                     removeReadOp();
                 }

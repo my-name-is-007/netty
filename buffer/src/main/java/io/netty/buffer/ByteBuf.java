@@ -242,6 +242,9 @@ import java.nio.charset.UnsupportedCharsetException;
  *
  * <h4>I/O Streams</h4>
  *
+ * ReferenceCounted:
+ *     一般的堆内的内存可以由GC来回收,堆外的话，就要自己手动来释放，不然会造成内存泄露的
+ *
  * Please refer to {@link ByteBufInputStream} and
  * {@link ByteBufOutputStream}.
  */
@@ -458,7 +461,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Sets the {@code readerIndex} and {@code writerIndex} of this buffer to
      * {@code 0}.
-     * This method is identical to {@link #setIndex(int, int) setIndex(0, 0)}.
+     * This method is identical(相同的) to {@link #setIndex(int, int) setIndex(0, 0)}.
      * <p>
      * Please note that the behavior of this method is different
      * from that of NIO buffer, which sets the {@code limit} to

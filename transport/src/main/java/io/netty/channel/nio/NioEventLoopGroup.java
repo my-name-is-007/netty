@@ -22,11 +22,9 @@ import io.netty.channel.EventLoopTaskQueueFactory;
 import io.netty.channel.MultithreadEventLoopGroup;
 import io.netty.channel.SelectStrategyFactory;
 import io.netty.channel.SingleThreadEventLoop;
-import io.netty.util.concurrent.EventExecutor;
-import io.netty.util.concurrent.EventExecutorChooserFactory;
-import io.netty.util.concurrent.RejectedExecutionHandler;
-import io.netty.util.concurrent.RejectedExecutionHandlers;
+import io.netty.util.concurrent.*;
 
+import java.lang.reflect.Field;
 import java.nio.channels.Selector;
 import java.nio.channels.spi.SelectorProvider;
 import java.util.concurrent.Executor;
@@ -36,6 +34,31 @@ import java.util.concurrent.ThreadFactory;
  * {@link MultithreadEventLoopGroup} implementations which is used for NIO {@link Selector} based {@link Channel}s.
  */
 public class NioEventLoopGroup extends MultithreadEventLoopGroup {
+    public String desc;
+
+    public NioEventLoopGroup(String desc){
+        this();
+        this.desc = desc;
+
+        try {
+            Field f = MultithreadEventExecutorGroup.class.getDeclaredField("children");
+            f.setAccessible(true);
+            EventExecutor[] es = (EventExecutor[]) f.get(this);
+            for (EventExecutor e : es) {
+                //设置 EventLoop  描述.
+                NioEventLoop eventLoop = ((NioEventLoop)e);
+                eventLoop.desc = desc;
+                //设置 当前事件循环组线程工厂前缀(EventLoop 绑定的线程由此工厂创建, 藉此可改变线程名字)
+                DefaultThreadFactory factory = this.getThreadFactory().getThreadFactory();
+                Field prefixField = DefaultThreadFactory.class.getDeclaredField("prefix");
+                prefixField.setAccessible(true);
+                prefixField.set(factory, desc + " - " + factory.getPrefix());
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+    }
 
     /**
      * Create a new instance using the default number of threads, the default {@link ThreadFactory} and
@@ -121,11 +144,11 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
     }
 
     /**
-     * @param nThreads the number of threads that will be used by this instance.
+     * @param nThreads 最大线程数量。如果指定为0，那么Netty会将线程数量设置为CPU逻辑处理器数量的2倍
      * @param executor the Executor to use, or {@code null} if default one should be used.
      * @param chooserFactory the {@link EventExecutorChooserFactory} to use.
-     * @param selectorProvider the {@link SelectorProvider} to use.
-     * @param selectStrategyFactory the {@link SelectStrategyFactory} to use.
+     * @param selectorProvider SelectorProvider.provider()
+     * @param selectStrategyFactory 默认为DefaultSelectStrategyFactory.INSTANCE
      * @param rejectedExecutionHandler the {@link RejectedExecutionHandler} to use.
      * @param taskQueueFactory the {@link EventLoopTaskQueueFactory} to use for
      *                         {@link SingleThreadEventLoop#execute(Runnable)},
@@ -182,5 +205,10 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
         return new NioEventLoop(this, executor, selectorProvider,
                 selectStrategyFactory.newSelectStrategy(),
                 rejectedExecutionHandler, taskQueueFactory, tailTaskQueueFactory);
+    }
+
+    @Override
+    public String toString() {
+        return desc;
     }
 }

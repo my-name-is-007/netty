@@ -325,6 +325,7 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
         }
     }
 
+    /** 直接 {@link SocketChannel} 确认通道连接已经建立. **/
     @Override
     protected void doFinishConnect() throws Exception {
         if (!javaChannel().finishConnect()) {

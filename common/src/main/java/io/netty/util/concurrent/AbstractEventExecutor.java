@@ -30,6 +30,12 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Abstract base class for {@link EventExecutor} implementations.
+ *
+ * 实现了 parent() 和 next() 两个方法,
+ * 而且 已经实现了任务执行的功能: ↓
+ * 普通 任务 的执行, 委派其父类: {@link AbstractExecutorService},
+ * 周期 任务 的执行, 直接抛出异常, 其子类会实现
+ * @see AbstractScheduledEventExecutor
  */
 public abstract class AbstractEventExecutor extends AbstractExecutorService implements EventExecutor {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractEventExecutor.class);
@@ -40,28 +46,18 @@ public abstract class AbstractEventExecutor extends AbstractExecutorService impl
     private final EventExecutorGroup parent;
     private final Collection<EventExecutor> selfCollection = Collections.<EventExecutor>singleton(this);
 
-    protected AbstractEventExecutor() {
-        this(null);
-    }
+    protected AbstractEventExecutor() { this(null); }
 
-    protected AbstractEventExecutor(EventExecutorGroup parent) {
-        this.parent = parent;
-    }
+    protected AbstractEventExecutor(EventExecutorGroup parent) { this.parent = parent; }
 
     @Override
-    public EventExecutorGroup parent() {
-        return parent;
-    }
+    public EventExecutorGroup parent() { return parent; }
 
     @Override
-    public EventExecutor next() {
-        return this;
-    }
+    public EventExecutor next() { return this; }
 
     @Override
-    public boolean inEventLoop() {
-        return inEventLoop(Thread.currentThread());
-    }
+    public boolean inEventLoop() { return inEventLoop(Thread.currentThread()); }
 
     @Override
     public Iterator<EventExecutor> iterator() {
@@ -71,23 +67,6 @@ public abstract class AbstractEventExecutor extends AbstractExecutorService impl
     @Override
     public Future<?> shutdownGracefully() {
         return shutdownGracefully(DEFAULT_SHUTDOWN_QUIET_PERIOD, DEFAULT_SHUTDOWN_TIMEOUT, TimeUnit.SECONDS);
-    }
-
-    /**
-     * @deprecated {@link #shutdownGracefully(long, long, TimeUnit)} or {@link #shutdownGracefully()} instead.
-     */
-    @Override
-    @Deprecated
-    public abstract void shutdown();
-
-    /**
-     * @deprecated {@link #shutdownGracefully(long, long, TimeUnit)} or {@link #shutdownGracefully()} instead.
-     */
-    @Override
-    @Deprecated
-    public List<Runnable> shutdownNow() {
-        shutdown();
-        return Collections.emptyList();
     }
 
     @Override
@@ -187,4 +166,17 @@ public abstract class AbstractEventExecutor extends AbstractExecutorService impl
      */
     @UnstableApi
     public interface LazyRunnable extends Runnable { }
+
+    /** @deprecated {@link #shutdownGracefully(long, long, TimeUnit)} or {@link #shutdownGracefully()} instead. **/
+    @Override
+    @Deprecated
+    public abstract void shutdown();
+
+    /** @deprecated {@link #shutdownGracefully(long, long, TimeUnit)} or {@link #shutdownGracefully()} instead. **/
+    @Override
+    @Deprecated
+    public List<Runnable> shutdownNow() {
+        shutdown();
+        return Collections.emptyList();
+    }
 }

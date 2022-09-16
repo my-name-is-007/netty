@@ -26,6 +26,7 @@ import io.netty.channel.DefaultChannelPromise;
 import io.netty.channel.EventLoop;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.ReflectiveChannelFactory;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.util.AttributeKey;
 import io.netty.util.concurrent.EventExecutor;
 import io.netty.util.concurrent.GlobalEventExecutor;
@@ -49,20 +50,47 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>When not used in a {@link ServerBootstrap} context, the {@link #bind()} methods are useful for connectionless
  * transports such as datagram (UDP).</p>
+ * 对于服务端而言, 有两种通道需要处理:
+ *     一种是ServerSocketChannel: 用于处理用户连接的accept操作，
+ *     另一种是SocketChannel: 表示对应客户端连接.
+ * 而对于客户端, 一般都只有一种channel, 也就是 SocketChannel.
+ *
+ * option / handler / attr方法都定义在AbstractBootstrap中, 客户端/服务端 都可以设置;
+ * childHandler / childOption / childAttr 是对应服务端的客户端设置, 所以 都 在 ServerBootstrap 中.
+ *
+ * 总结:
+ * <ul>
+ *     <li>
+ *         服务端由两种线程池, 用于Acceptor的React主线程和用于I/O操作的React从线程池, 客户端只有用于连接及IO操作的React的主线程池.
+ *     </li>
+ *     <li>
+ *         ServerBootstrap中定义了服务端React的 "从线程池" 对应的相关配置, 都是以child开头的属性, 而用于"主线程池"channel的属性都定义在AbstractBootstrap中.
+ *     </li>
+ * </ul>
+ *
  */
 public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C extends Channel> implements Cloneable {
-    @SuppressWarnings("unchecked")
+
     private static final Map.Entry<ChannelOption<?>, Object>[] EMPTY_OPTION_ARRAY = new Map.Entry[0];
-    @SuppressWarnings("unchecked")
+
     private static final Map.Entry<AttributeKey<?>, Object>[] EMPTY_ATTRIBUTE_ARRAY = new Map.Entry[0];
 
+    /**
+     * 主 事件循环组, 在 {@link ServerBootstrap} 中有 childGroup,
+     * 而 {@link Bootstrap} 中没有其他 group, 因为它仅仅是发起请求而已.
+     */
     volatile EventLoopGroup group;
-    @SuppressWarnings("deprecation")
+
+    /**
+     * 生产指定类型的 Channel, 如 {@link NioServerSocketChannel}.
+     */
     private volatile ChannelFactory<? extends C> channelFactory;
     private volatile SocketAddress localAddress;
 
-    // The order in which ChannelOptions are applied is important they may depend on each other for validation
-    // purposes.
+    /**
+     * 应用 ChannelOptions 的顺序很重要，
+     * 它们可能相互依赖以进行验证 目的。
+     */
     private final Map<ChannelOption<?>, Object> options = new LinkedHashMap<ChannelOption<?>, Object>();
     private final Map<AttributeKey<?>, Object> attrs = new ConcurrentHashMap<AttributeKey<?>, Object>();
     private volatile ChannelHandler handler;
@@ -96,19 +124,15 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     @SuppressWarnings("unchecked")
-    private B self() {
-        return (B) this;
-    }
+    private B self() { return (B) this; }
 
     /**
-     * The {@link Class} which is used to create {@link Channel} instances from.
-     * You either use this or {@link #channelFactory(io.netty.channel.ChannelFactory)} if your
-     * {@link Channel} implementation has no no-args constructor.
+     * 设置 channelFactory, 用于生产指定类型 的 Channel.
+     * {@link ReflectiveChannelFactory} 构造器 会获取传入参数的无参构造器, 仅此而已; <br/>
+     * {@link #channelFactory(io.netty.channel.ChannelFactory)} 仅仅是将 传入的 {@link ChannelFactory} 赋给自己的 {@link #channelFactory} 属性
      */
     public B channel(Class<? extends C> channelClass) {
-        return channelFactory(new ReflectiveChannelFactory<C>(
-                ObjectUtil.checkNotNull(channelClass, "channelClass")
-        ));
+        return channelFactory(new ReflectiveChannelFactory<C>(ObjectUtil.checkNotNull(channelClass, "channelClass")));
     }
 
     /**
@@ -138,37 +162,30 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     /**
-     * The {@link SocketAddress} which is used to bind the local "end" to.
+     * 设置 Bootstrap 绑定到的 本地地址,
      */
     public B localAddress(SocketAddress localAddress) {
         this.localAddress = localAddress;
         return self();
     }
 
-    /**
-     * @see #localAddress(SocketAddress)
-     */
-    public B localAddress(int inetPort) {
-        return localAddress(new InetSocketAddress(inetPort));
-    }
+    public B localAddress(int inetPort) { return localAddress(new InetSocketAddress(inetPort)); }
 
-    /**
-     * @see #localAddress(SocketAddress)
-     */
+
     public B localAddress(String inetHost, int inetPort) {
         return localAddress(SocketUtils.socketAddress(inetHost, inetPort));
     }
 
-    /**
-     * @see #localAddress(SocketAddress)
-     */
     public B localAddress(InetAddress inetHost, int inetPort) {
         return localAddress(new InetSocketAddress(inetHost, inetPort));
     }
 
     /**
-     * Allow to specify a {@link ChannelOption} which is used for the {@link Channel} instances once they got
-     * created. Use a value of {@code null} to remove a previous set {@link ChannelOption}.
+     * 设置通道的选项参数, 其实加到一个 Map 里面:
+     *     对于服务端而言就是 {@link io.netty.channel.socket.ServerSocketChannel} 参数,
+     *     客户端而言就是 {@link io.netty.channel.socket.SocketChannel}
+     *
+     * 使用 null值 可以删除之前创建的 {@link ChannelOption}.
      */
     public <T> B option(ChannelOption<T> option, T value) {
         ObjectUtil.checkNotNull(option, "option");
@@ -183,8 +200,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     /**
-     * Allow to specify an initial attribute of the newly created {@link Channel}.  If the {@code value} is
-     * {@code null}, the attribute of the specified {@code key} is removed.
+     * 设置通道的属性, 其实就是加到 Map 里面
      */
     public <T> B attr(AttributeKey<T> key, T value) {
         ObjectUtil.checkNotNull(key, "key");
@@ -228,7 +244,63 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     /**
-     * Create a new {@link Channel} and bind it.
+     * <ul>
+     *     <li>调用工厂方法, 生成channel实例</li>
+     *     <li>初始化通道信息: {@link ServerBootstrap#init(Channel)}、{@link Bootstrap#init(Channel)}.</li>
+     *     <li>注册通道.</li>
+     * </ul>
+     */
+    final ChannelFuture initAndRegister() {
+        Channel channel = null;
+        try {
+            //创建 当前Bootstrap 关联 的 Channel.
+            channel = channelFactory.newChannel();
+            //初始化信息, 交给了两个子类,
+            init(channel);
+        } catch (Throwable t) {
+            if (channel != null) {
+                // channel can be null if newChannel crashed (eg SocketException("too many open files"))
+                channel.unsafe().closeForcibly();
+                // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
+                return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
+            }
+            // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
+            return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
+        }
+
+        /**
+         * 获取 bossGroup(NioEventLoopGroup), 然后 注册.
+         * 事件循环组 获取 next EventLoop EvenLoop 委派给 Channel 的 Unsafe
+         */
+        ChannelFuture regFuture = config().group().register(channel);
+        if (regFuture.cause() != null) {
+            if (channel.isRegistered()) {
+                channel.close();
+            } else {
+                channel.unsafe().closeForcibly();
+            }
+        }
+
+        // If we are here and the promise is not failed, it's one of the following cases:
+        // 1) If we attempted registration from the event loop, the registration has been completed at this point.
+        //    i.e. It's safe to attempt bind() or connect() now because the channel has been registered.
+        // 2) If we attempted registration from the other thread, the registration request has been successfully
+        //    added to the event loop's task queue for later execution.
+        //    i.e. It's safe to attempt bind() or connect() now:
+        //         because bind() or connect() will be executed *after* the scheduled registration task is executed
+        //         because register(), bind(), and connect() are all bound to the same thread.
+
+        return regFuture;
+    }
+
+    /**
+     * @see Bootstrap#init(Channel)
+     * @see ServerBootstrap#init(Channel)
+     */
+    abstract void init(Channel channel) throws Exception;
+
+    /**
+     * 绑定到自己属性制定的 {@link SocketAddress} 上.
      */
     public ChannelFuture bind() {
         validate();
@@ -238,36 +310,19 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         }
         return doBind(localAddress);
     }
-
-    /**
-     * Create a new {@link Channel} and bind it.
-     */
-    public ChannelFuture bind(int inetPort) {
-        return bind(new InetSocketAddress(inetPort));
-    }
-
-    /**
-     * Create a new {@link Channel} and bind it.
-     */
-    public ChannelFuture bind(String inetHost, int inetPort) {
-        return bind(SocketUtils.socketAddress(inetHost, inetPort));
-    }
-
-    /**
-     * Create a new {@link Channel} and bind it.
-     */
-    public ChannelFuture bind(InetAddress inetHost, int inetPort) {
-        return bind(new InetSocketAddress(inetHost, inetPort));
-    }
-
-    /**
-     * Create a new {@link Channel} and bind it.
-     */
+    /** 绑定到指定 {@link SocketAddress}. **/
+    public ChannelFuture bind(int inetPort) { return bind(new InetSocketAddress(inetPort)); }
+    public ChannelFuture bind(String inetHost, int inetPort) { return bind(SocketUtils.socketAddress(inetHost, inetPort)); }
+    public ChannelFuture bind(InetAddress inetHost, int inetPort) { return bind(new InetSocketAddress(inetHost, inetPort)); }
     public ChannelFuture bind(SocketAddress localAddress) {
         validate();
         return doBind(ObjectUtil.checkNotNull(localAddress, "localAddress"));
     }
 
+    /**
+     * 绑定到本地地址:
+     *     除去 "无用" 代码, 就做了两件事: 调用 initAndRegister、调用 doBind0.
+     */
     private ChannelFuture doBind(final SocketAddress localAddress) {
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
@@ -304,45 +359,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         }
     }
 
-    final ChannelFuture initAndRegister() {
-        Channel channel = null;
-        try {
-            channel = channelFactory.newChannel();
-            init(channel);
-        } catch (Throwable t) {
-            if (channel != null) {
-                // channel can be null if newChannel crashed (eg SocketException("too many open files"))
-                channel.unsafe().closeForcibly();
-                // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
-                return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
-            }
-            // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
-            return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
-        }
-
-        ChannelFuture regFuture = config().group().register(channel);
-        if (regFuture.cause() != null) {
-            if (channel.isRegistered()) {
-                channel.close();
-            } else {
-                channel.unsafe().closeForcibly();
-            }
-        }
-
-        // If we are here and the promise is not failed, it's one of the following cases:
-        // 1) If we attempted registration from the event loop, the registration has been completed at this point.
-        //    i.e. It's safe to attempt bind() or connect() now because the channel has been registered.
-        // 2) If we attempted registration from the other thread, the registration request has been successfully
-        //    added to the event loop's task queue for later execution.
-        //    i.e. It's safe to attempt bind() or connect() now:
-        //         because bind() or connect() will be executed *after* the scheduled registration task is executed
-        //         because register(), bind(), and connect() are all bound to the same thread.
-
-        return regFuture;
-    }
-
-    abstract void init(Channel channel) throws Exception;
-
+    /** 完成 channel 的 侦听端口 的 绑定. **/
     private static void doBind0(
             final ChannelFuture regFuture, final Channel channel,
             final SocketAddress localAddress, final ChannelPromise promise) {
@@ -362,7 +379,8 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     /**
-     * the {@link ChannelHandler} to use for serving the requests.
+     * 对于 服务端, ServerSocketChannel, 处理 连接请求;
+     * 对于 客户端, SocketChannel, 处理 业务操作.
      */
     public B handler(ChannelHandler handler) {
         this.handler = ObjectUtil.checkNotNull(handler, "handler");
@@ -375,9 +393,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
      * @deprecated Use {@link #config()} instead.
      */
     @Deprecated
-    public final EventLoopGroup group() {
-        return group;
-    }
+    public final EventLoopGroup group() { return group; }
 
     /**
      * Returns the {@link AbstractBootstrapConfig} object that can be used to obtain the current config
@@ -449,16 +465,14 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         }
     }
 
-    static void setChannelOptions(
-            Channel channel, Map.Entry<ChannelOption<?>, Object>[] options, InternalLogger logger) {
+    static void setChannelOptions(Channel channel, Map.Entry<ChannelOption<?>, Object>[] options, InternalLogger logger) {
         for (Map.Entry<ChannelOption<?>, Object> e: options) {
             setChannelOption(channel, e.getKey(), e.getValue(), logger);
         }
     }
 
     @SuppressWarnings("unchecked")
-    private static void setChannelOption(
-            Channel channel, ChannelOption<?> option, Object value, InternalLogger logger) {
+    private static void setChannelOption(Channel channel, ChannelOption<?> option, Object value, InternalLogger logger) {
         try {
             if (!channel.config().setOption((ChannelOption<Object>) option, value)) {
                 logger.warn("Unknown channel option '{}' for channel '{}'", option, channel);

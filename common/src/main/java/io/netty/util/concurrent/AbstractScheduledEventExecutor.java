@@ -28,6 +28,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Abstract base class for {@link EventExecutor}s that want to support scheduling.
+ *
+ * 实现了 任务调度的能力,
  */
 public abstract class AbstractScheduledEventExecutor extends AbstractEventExecutor {
     private static final Comparator<ScheduledFutureTask<?>> SCHEDULED_FUTURE_TASK_COMPARATOR =
@@ -38,11 +40,14 @@ public abstract class AbstractScheduledEventExecutor extends AbstractEventExecut
                 }
             };
 
-   static final Runnable WAKEUP_TASK = new Runnable() {
+    /** 空任务, 什么也不做. **/
+    static final Runnable WAKEUP_TASK = new Runnable() {
+       // Do nothing
        @Override
-       public void run() { } // Do nothing
+       public void run() { }
     };
 
+    /** 优先级任务队列. **/
     PriorityQueue<ScheduledFutureTask<?>> scheduledTaskQueue;
 
     long nextTaskId;

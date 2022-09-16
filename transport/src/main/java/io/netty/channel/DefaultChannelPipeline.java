@@ -89,6 +89,11 @@ public class DefaultChannelPipeline implements ChannelPipeline {
      */
     private boolean registered;
 
+    /**
+     * 绑定 NioServerSocketChannel对象, 并初始化 HeadContext 和 TailContext 对象,
+     * pipeline 其实 就是一个双向链表.
+     * @param channel
+     */
     protected DefaultChannelPipeline(Channel channel) {
         this.channel = ObjectUtil.checkNotNull(channel, "channel");
         succeededFuture = new SucceededChannelFuture(channel, null);
@@ -784,6 +789,14 @@ public class DefaultChannelPipeline implements ChannelPipeline {
      */
     @Override
     public final String toString() {
+
+        StringBuilder sb = new StringBuilder(head.handler().getClass().getSimpleName());
+        AbstractChannelHandlerContext c = head.next;
+        while(c != null){
+            sb.append(" ===> ").append(c.handler().getClass().getSimpleName());
+            c = c.next;
+        }
+
         StringBuilder buf = new StringBuilder()
             .append(StringUtil.simpleClassName(this))
             .append('{');
@@ -807,7 +820,8 @@ public class DefaultChannelPipeline implements ChannelPipeline {
             buf.append(", ");
         }
         buf.append('}');
-        return buf.toString();
+        return sb.append(" +++ ").append(buf).toString();
+        //return buf.toString();
     }
 
     @Override
@@ -1302,8 +1316,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         }
     }
 
-    final class HeadContext extends AbstractChannelHandlerContext
-            implements ChannelOutboundHandler, ChannelInboundHandler {
+    /**
+     * 既可以处理 出栈, 也可以处理 入栈.
+     */
+    final class HeadContext extends AbstractChannelHandlerContext implements ChannelOutboundHandler, ChannelInboundHandler {
 
         private final Unsafe unsafe;
 

@@ -19,14 +19,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.AbstractChannel;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelException;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelPromise;
-import io.netty.channel.ConnectTimeoutException;
-import io.netty.channel.EventLoop;
+import io.netty.channel.*;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.logging.InternalLogger;
@@ -47,12 +41,16 @@ import java.util.concurrent.TimeUnit;
  */
 public abstract class AbstractNioChannel extends AbstractChannel {
 
-    private static final InternalLogger logger =
-            InternalLoggerFactory.getInstance(AbstractNioChannel.class);
-
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractNioChannel.class);
+    
+    /** NIO Channel. **/
     private final SelectableChannel ch;
+    /** SelectionKey.OP_READ 读事件. **/
     protected final int readInterestOp;
+
+    /** 当前Channel 关联的 SelectionKey. **/
     volatile SelectionKey selectionKey;
+    /** 是否还有未读的数据. **/
     boolean readPending;
     private final Runnable clearReadPendingRunnable = new Runnable() {
         @Override
@@ -61,20 +59,17 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         }
     };
 
-    /**
-     * The future of the current connection attempt.  If not null, subsequent
-     * connection attempts will fail.
-     */
+    /** 连接操作的结果. **/
     private ChannelPromise connectPromise;
+    /** 连接超时定时任务. **/
     private ScheduledFuture<?> connectTimeoutFuture;
+    /** 客户端地址. **/
     private SocketAddress requestedRemoteAddress;
 
     /**
-     * Create a new instance
-     *
-     * @param parent            the parent {@link Channel} by which this instance was created. May be {@code null}
-     * @param ch                the underlying {@link SelectableChannel} on which it operates
-     * @param readInterestOp    the ops to set to receive data from the {@link SelectableChannel}
+     * 设置 Channel,
+     * 设置 感兴趣事件,
+     * 设置 非阻塞.
      */
     protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
         super(parent);
@@ -188,24 +183,21 @@ public abstract class AbstractNioChannel extends AbstractChannel {
     }
 
     /**
-     * Special {@link Unsafe} sub-type which allows to access the underlying {@link SelectableChannel}
+     * 允许访问底层 {@link SelectableChannel} 的 特殊 Unsafe.<br/>
+     * 其实从名字上可以看出, NioUnsafe, 肯定是 和 Nio 相关操作 有关系 的 Unsafe
      */
     public interface NioUnsafe extends Unsafe {
-        /**
-         * Return underlying {@link SelectableChannel}
-         */
+        
+        /** 返回 底层的 {@link SelectableChannel}. **/
         SelectableChannel ch();
 
-        /**
-         * Finish connect
-         */
+        /** 完成连接, 具体作用未知. **/
         void finishConnect();
 
-        /**
-         * Read from underlying {@link SelectableChannel}
-         */
+        /** 从 底层 {@link SelectableChannel} 中读取数据. **/
         void read();
 
+        /** 强制刷新, 估计是向外写数据时. **/
         void forceFlush();
     }
 
@@ -221,15 +213,13 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             }
             int interestOps = key.interestOps();
             if ((interestOps & readInterestOp) != 0) {
-                // only remove readInterestOp if needed
+                //仅在需要时删除 readInterestOp
                 key.interestOps(interestOps & ~readInterestOp);
             }
         }
 
         @Override
-        public final SelectableChannel ch() {
-            return javaChannel();
-        }
+        public final SelectableChannel ch() { return javaChannel(); }
 
         @Override
         public final void connect(
@@ -297,6 +287,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             boolean active = isActive();
 
             // trySuccess() will return false if a user cancelled the connection attempt.
+            //通知DefaultChannelPromise的监听器连接已成功建立
             boolean promiseSet = promise.trySuccess();
 
             // Regardless if the connection attempt was cancelled, channelActive() event should be triggered,
@@ -322,6 +313,10 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             closeIfClosed();
         }
 
+        /**
+         * 委派至 {@link NioSocketChannel#doFinishConnect()},
+         * {@link #fulfillConnectPromise(ChannelPromise, boolean)} 会触发{@link ChannelPipeline#fireChannelActive()}
+         */
         @Override
         public final void finishConnect() {
             // Note this method is invoked by the event loop only if the connection attempt was
@@ -377,6 +372,12 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         boolean selected = false;
         for (;;) {
             try {
+                /**
+                 * 注册 到 JDK 原生 Selector, 感兴趣事件为0(对任何事件都不感兴趣，仅仅完成注册操作), 把当前的 Channel 当做附件进行注册
+                 * 如果注册成功则返回 selectionKey, 通过 它 可用从 Selector 中获取 当前注册的 Channel。
+                 * Channel 和 SelectionKey 的 关系:
+                 *     这个SelectionKey属于这个Channel, 这里不仅仅是说SelectionKey是当前类的属性,
+                 */
                 selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
                 return;
             } catch (CancelledKeyException e) {
@@ -399,6 +400,11 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         eventLoop().cancel(selectionKey());
     }
 
+    /**
+     * 当 Channel 处于 channelActive 状态后,
+     * 就会 {@link DefaultChannelPipeline#fireChannelActive()} 方法中调用 doBeginRead() 方法, 在 selector 上注册读事件.
+     *
+     */
     @Override
     protected void doBeginRead() throws Exception {
         // Channel.read() or ChannelHandlerContext.read() was called

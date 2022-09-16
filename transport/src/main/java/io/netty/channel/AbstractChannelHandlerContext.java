@@ -16,6 +16,7 @@
 package io.netty.channel;
 
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.DefaultChannelPipeline.HeadContext;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
@@ -140,6 +141,8 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return name;
     }
 
+    /** <================================== 以下 为 生命周期 相关方法 ==================================>. **/
+    /** <================================== fireExceptionCaught ==================================>. **/
     @Override
     public ChannelHandlerContext fireChannelRegistered() {
         invokeChannelRegistered(findContextInbound(MASK_CHANNEL_REGISTERED));
@@ -172,6 +175,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** <================================== fireChannelUnregistered ==================================>. **/
     @Override
     public ChannelHandlerContext fireChannelUnregistered() {
         invokeChannelUnregistered(findContextInbound(MASK_CHANNEL_UNREGISTERED));
@@ -204,6 +208,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** <==================================fireChannelActive==================================>. **/
     @Override
     public ChannelHandlerContext fireChannelActive() {
         invokeChannelActive(findContextInbound(MASK_CHANNEL_ACTIVE));
@@ -236,6 +241,8 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+
+    /** <================================== fireChannelInactive ==================================>. **/
     @Override
     public ChannelHandlerContext fireChannelInactive() {
         invokeChannelInactive(findContextInbound(MASK_CHANNEL_INACTIVE));
@@ -268,6 +275,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** <================================== fireExceptionCaught ==================================>. **/
     @Override
     public ChannelHandlerContext fireExceptionCaught(final Throwable cause) {
         invokeExceptionCaught(findContextInbound(MASK_EXCEPTION_CAUGHT), cause);
@@ -319,6 +327,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** <================================== fireExceptionCaught ==================================>. **/
     @Override
     public ChannelHandlerContext fireUserEventTriggered(final Object event) {
         invokeUserEventTriggered(findContextInbound(MASK_USER_EVENT_TRIGGERED), event);
@@ -352,12 +361,18 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** <================================== fireChannelRead ==================================>. **/
     @Override
     public ChannelHandlerContext fireChannelRead(final Object msg) {
         invokeChannelRead(findContextInbound(MASK_CHANNEL_READ), msg);
         return this;
     }
 
+    /**
+     * 有请求时, 会由 {@link DefaultChannelPipeline#fireChannelRead(Object)} 来调用当前方法,
+     * 传入 {@link HeadContext} 和 {@link io.netty.buffer.PooledUnsafeDirectByteBuf}.
+     * 委派至 next 的 invokeChannelRead,
+     */
     static void invokeChannelRead(final AbstractChannelHandlerContext next, Object msg) {
         final Object m = next.pipeline.touch(ObjectUtil.checkNotNull(msg, "msg"), next);
         EventExecutor executor = next.executor();
@@ -373,6 +388,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** 获取 关联的 {@link ChannelHandler}, 调用其 channelRead方法, 传入 上下文 和 消息 对象. **/
     private void invokeChannelRead(Object msg) {
         if (invokeHandler()) {
             try {
@@ -385,6 +401,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** <================================== fireChannelReadComplete ==================================>. **/
     @Override
     public ChannelHandlerContext fireChannelReadComplete() {
         invokeChannelReadComplete(findContextInbound(MASK_CHANNEL_READ_COMPLETE));
@@ -416,6 +433,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+    /** <================================== fireChannelWritabilityChanged ==================================>. **/
     @Override
     public ChannelHandlerContext fireChannelWritabilityChanged() {
         invokeChannelWritabilityChanged(findContextInbound(MASK_CHANNEL_WRITABILITY_CHANGED));
@@ -447,6 +465,8 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         }
     }
 
+
+    /** <================================== 结束 ==================================>. **/
     @Override
     public ChannelFuture bind(SocketAddress localAddress) {
         return bind(localAddress, newPromise());
@@ -873,6 +893,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return false;
     }
 
+    /** <================================== 找到 下一 入栈 处理器 ==================================>. **/
     private AbstractChannelHandlerContext findContextInbound(int mask) {
         AbstractChannelHandlerContext ctx = this;
         EventExecutor currentExecutor = executor();
@@ -891,8 +912,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return ctx;
     }
 
-    private static boolean skipContext(
-            AbstractChannelHandlerContext ctx, EventExecutor currentExecutor, int mask, int onlyMask) {
+    private static boolean skipContext(AbstractChannelHandlerContext ctx, EventExecutor currentExecutor, int mask, int onlyMask) {
         // Ensure we correctly handle MASK_EXCEPTION_CAUGHT which is not included in the MASK_EXCEPTION_CAUGHT
         return (ctx.executionMask & (onlyMask | mask)) == 0 ||
                 // We can only skip if the EventExecutor is the same as otherwise we need to ensure we offload

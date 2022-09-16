@@ -17,13 +17,20 @@ package io.netty.util.concurrent;
 
 import io.netty.util.internal.ObjectUtil;
 
+/**
+ * 将 普通 Runnable 作为自己属性, run 还是 靠 传进来的那个.
+ * 只是 添加 了 FastThreadLocal 的 处理.
+ */
 final class FastThreadLocalRunnable implements Runnable {
+
+    /** 实际运行的Runnanle. **/
     private final Runnable runnable;
 
     private FastThreadLocalRunnable(Runnable runnable) {
         this.runnable = ObjectUtil.checkNotNull(runnable, "runnable");
     }
 
+    /** 这里配合着 {@link FastThreadLocal}, 后面会说这个类, 早期笔记中对此类也有过记载. **/
     @Override
     public void run() {
         try {
@@ -33,6 +40,7 @@ final class FastThreadLocalRunnable implements Runnable {
         }
     }
 
+    /** 如果是 FastThreadLocalRunnable, 直接返回; 否则 包装下(所谓的包装其实仅仅是将其作为自己属性). **/
     static Runnable wrap(Runnable runnable) {
         return runnable instanceof FastThreadLocalRunnable ? runnable : new FastThreadLocalRunnable(runnable);
     }

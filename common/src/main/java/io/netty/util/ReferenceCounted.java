@@ -28,6 +28,7 @@ package io.netty.util;
  * {@link ReferenceCounted}, the contained objects will also be released via {@link #release()} when the container's
  * reference count becomes 0.
  * </p>
+ * 对象的初始引用计数为 1, 当引用计数器值为 0 时，表示该对象不能再被继续引用，只能被释放。
  */
 public interface ReferenceCounted {
     /**

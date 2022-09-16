@@ -34,7 +34,8 @@ public class ThreadPerChannelEventLoop extends SingleThreadEventLoop {
 
     @Override
     public ChannelFuture register(ChannelPromise promise) {
-        return super.register(promise).addListener(new ChannelFutureListener() {
+         ChannelFuture f = super.register(promise);
+         ChannelFuture f2 = f.addListener(new ChannelFutureListener() {
             @Override
             public void operationComplete(ChannelFuture future) throws Exception {
                 if (future.isSuccess()) {
@@ -44,6 +45,7 @@ public class ThreadPerChannelEventLoop extends SingleThreadEventLoop {
                 }
             }
         });
+        return f2;
     }
 
     @Deprecated

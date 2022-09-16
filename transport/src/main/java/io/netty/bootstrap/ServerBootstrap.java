@@ -27,11 +27,16 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.ServerChannel;
+import io.netty.channel.nio.NioEventLoop;
+import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.MultithreadEventExecutorGroup;
 import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
+import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -70,21 +75,16 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
      * Specify the {@link EventLoopGroup} which is used for the parent (acceptor) and the child (client).
      */
     @Override
-    public ServerBootstrap group(EventLoopGroup group) {
-        return group(group, group);
-    }
+    public ServerBootstrap group(EventLoopGroup group) { return group(group, group); }
 
-    /**
-     * Set the {@link EventLoopGroup} for the parent (acceptor) and the child (client). These
-     * {@link EventLoopGroup}'s are used to handle all the events and IO for {@link ServerChannel} and
-     * {@link Channel}'s.
-     */
+    /** 仅仅是设置 两个 group 而已. **/
     public ServerBootstrap group(EventLoopGroup parentGroup, EventLoopGroup childGroup) {
         super.group(parentGroup);
         if (this.childGroup != null) {
             throw new IllegalStateException("childGroup set already");
         }
         this.childGroup = ObjectUtil.checkNotNull(childGroup, "childGroup");
+
         return this;
     }
 
@@ -127,18 +127,36 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
         return this;
     }
 
+    /**
+     * 初始化 Channel, 因为是 Server端Channel, 所以 参数为 {@link io.netty.channel.socket.nio.NioServerSocketChannel}.
+     * <ul>
+     *     <li>设置 option, 就是 引导类配置 的 那些</li>
+     *     <li>设置引导类配置的attr</li>
+     * </ul>
+     * <ul>
+     *     <li>设置 channel 的 属性 和 配置</li>
+     *     <li>
+     *         获取 channel 关联 的 pipeline, 添加匿名 ChannelInitializer,
+     *         重写其 {@link ChannelInitializer#initChannel(Channel)}方法:
+     *             获取 channel 关联 pipeline, 添加 你指定的 handler, 获取事件循环 执行任务: 添加 ServerBootstrapAcceptor
+     *     </li>
+     * </ul>
+     *
+     *
+     */
     @Override
     void init(Channel channel) {
         setChannelOptions(channel, newOptionsArray(), logger);
         setAttributes(channel, newAttributesArray());
-
-        ChannelPipeline p = channel.pipeline();
 
         final EventLoopGroup currentChildGroup = childGroup;
         final ChannelHandler currentChildHandler = childHandler;
         final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
+        //获取当前通道的pipeline. 此定义开始放在了上面, 让我挪下来了: 哪里调用, 哪里声明.
+        ChannelPipeline p = channel.pipeline();
+        //给 NioServerSocketChannel 的 pipeline 添加一个 ChannelInitializer类型 的 Handler
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(final Channel ch) {

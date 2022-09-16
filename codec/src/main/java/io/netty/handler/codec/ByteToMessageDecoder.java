@@ -87,6 +87,11 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
             }
             try {
                 final int required = in.readableBytes();
+                /**
+                 * 当前的累积器空间不足,需要扩容
+                 * 因为read的时候,每隔一段时间都需要对累积器的内存空间进行整理,那么整理的过程会导致
+                 * 读写index变更, 进而导致浅拷贝后的ByteBuf不可用.
+                 */
                 if (required > cumulation.maxWritableBytes() ||
                         (required > cumulation.maxFastWritableBytes() && cumulation.refCnt() > 1) ||
                         cumulation.isReadOnly()) {
@@ -267,12 +272,16 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        //消息 是 ByteBuf类型
         if (msg instanceof ByteBuf) {
+            // 从对象池取出一个CodecOutputList, 用来收集解码后的消息
             CodecOutputList out = CodecOutputList.newInstance();
             try {
+                //看累积器是不是为空来决定是不是首次处理: 首次则直接赋予累积器、否则累加到累积器
                 first = cumulation == null;
                 cumulation = cumulator.cumulate(ctx.alloc(),
                         first ? Unpooled.EMPTY_BUFFER : cumulation, (ByteBuf) msg);
+                //对消息进行解码
                 callDecode(ctx, cumulation, out);
             } catch (DecoderException e) {
                 throw e;
@@ -425,9 +434,11 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
      */
     protected void callDecode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) {
         try {
+            //缓冲器有内容可读
             while (in.isReadable()) {
                 final int outSize = out.size();
 
+                //out容器有内容: 说明解码有结果了, 那么马上需要通知下游handle
                 if (outSize > 0) {
                     fireChannelRead(ctx, out, outSize);
                     out.clear();
@@ -442,6 +453,7 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                     }
                 }
 
+                //子类来处理具体解码的工作,最终将解码后的消息放在out里面就好
                 int oldInputLength = in.readableBytes();
                 decodeRemovalReentryProtection(ctx, in, out);
 
@@ -449,24 +461,30 @@ public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter 
                 // If it was removed, it is not safe to continue to operate on the buffer.
                 //
                 // See https://github.com/netty/netty/issues/1664
+                //如果此时hanler被移除,那么不用继续处理,直接退出
                 if (ctx.isRemoved()) {
                     break;
                 }
 
+                //子类解码没有结果
                 if (out.isEmpty()) {
+                    //没有读取任何数据: 结束循环
                     if (oldInputLength == in.readableBytes()) {
                         break;
                     } else {
+                        // 如果有读取,但不足与产生结果,那么需要继续读取
                         continue;
                     }
                 }
 
+                //如果有结果,但是根本就没有读取数据, 那么不是很诡异么?
                 if (oldInputLength == in.readableBytes()) {
                     throw new DecoderException(
                             StringUtil.simpleClassName(getClass()) +
                                     ".decode() did not read anything but decoded a message.");
                 }
 
+                //是否只执行一次
                 if (isSingleDecode()) {
                     break;
                 }

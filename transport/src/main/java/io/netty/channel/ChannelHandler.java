@@ -174,41 +174,24 @@ import java.lang.annotation.Target;
  * {@link ChannelPipeline} to find out more about inbound and outbound operations,
  * what fundamental differences they have, how they flow in a  pipeline,  and how to handle
  * the operation in your application.
+ *
+ * 里面的方法, 都属于回调类.
  */
 public interface ChannelHandler {
 
-    /**
-     * Gets called after the {@link ChannelHandler} was added to the actual context and it's ready to handle events.
-     */
+    /** 在将 {@link ChannelHandler} 添加 到 上下文 后 调用. **/
     void handlerAdded(ChannelHandlerContext ctx) throws Exception;
 
-    /**
-     * Gets called after the {@link ChannelHandler} was removed from the actual context and it doesn't handle events
-     * anymore.
-     */
+    /** 当从上下文中移除{@link ChannelHandler} 时调用. **/
     void handlerRemoved(ChannelHandlerContext ctx) throws Exception;
 
     /**
-     * Gets called if a {@link Throwable} was thrown.
-     *
-     * @deprecated if you want to handle this event you should implement {@link ChannelInboundHandler} and
-     * implement the method there.
+     * 抛异常时被调用.
+     * @deprecated 如果你想处理这个事件，你应该实现ChannelInboundHandler并在那里实现方法.
      */
     @Deprecated
     void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception;
 
-    /**
-     * Indicates that the same instance of the annotated {@link ChannelHandler}
-     * can be added to one or more {@link ChannelPipeline}s multiple times
-     * without a race condition.
-     * <p>
-     * If this annotation is not specified, you have to create a new handler
-     * instance every time you add it to a pipeline because it has unshared
-     * state such as member variables.
-     * <p>
-     * This annotation is provided for documentation purpose, just like
-     * <a href="http://www.javaconcurrencyinpractice.com/annotations/doc/">the JCIP annotations</a>.
-     */
     @Inherited
     @Documented
     @Target(ElementType.TYPE)

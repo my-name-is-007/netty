@@ -28,7 +28,9 @@ import java.util.concurrent.ThreadFactory;
 
 /**
  * Abstract base class for {@link EventLoop}s that execute all its submitted tasks in a single thread.
+ * 构造器简单的调用父类,
  *
+ * 增加 注册 Channel、ChannelPromise 的 功能, 将其委派至 Unsafe,
  */
 public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor implements EventLoop {
 
@@ -98,6 +100,16 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
     }
 
     /**
+     * Returns the number of {@link Channel}s registered with this {@link EventLoop} or {@code -1}
+     * if operation is not supported. The returned value is not guaranteed to be exact accurate and
+     * should be viewed as a best effort.
+     */
+    @UnstableApi
+    public int registeredChannels() {
+        return -1;
+    }
+
+    /**
      * Adds a task to be run once at the end of next (or current) {@code eventloop} iteration.
      *
      * @param task to be added.
@@ -145,13 +157,4 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
         return super.pendingTasks() + tailTasks.size();
     }
 
-    /**
-     * Returns the number of {@link Channel}s registered with this {@link EventLoop} or {@code -1}
-     * if operation is not supported. The returned value is not guaranteed to be exact accurate and
-     * should be viewed as a best effort.
-     */
-    @UnstableApi
-    public int registeredChannels() {
-        return -1;
-    }
 }

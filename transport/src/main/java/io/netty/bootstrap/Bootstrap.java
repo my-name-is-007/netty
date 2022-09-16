@@ -256,6 +256,9 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
         });
     }
 
+    /**
+     * 获取 Channel 关联 的 Pipeline, 添加 你指定的 handler, 设置 channel 属性 和 配置.
+     */
     @Override
     void init(Channel channel) {
         ChannelPipeline p = channel.pipeline();
