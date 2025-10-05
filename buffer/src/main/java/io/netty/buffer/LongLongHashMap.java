@@ -195,7 +195,8 @@ final class LongLongHashMap {
         // 计算key的哈希索引
         int index = index(key);
 
-        // 线性探测寻找key        for (int i = 0; i < maxProbe; i++) {
+        // 线性探测寻找key
+        for (int i = 0; i < maxProbe; i++) {
             long existing = array[index];
 
             // 找到匹配的key
